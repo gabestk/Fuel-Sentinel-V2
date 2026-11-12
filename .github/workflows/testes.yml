@@ -73,8 +73,29 @@ jobs:
           flutter-version: '3.47.9'
           cache: true
       - run: flutter pub get
+      # Assina com a chave fixa guardada nos Secrets (KEYSTORE_BASE64 e
+      # KEYSTORE_PASSWORD), para o APK novo atualizar o instalado. O número do
+      # build sobe a cada execução, porque o Android só aceita atualizar para
+      # um número maior.
+      - name: Preparar a chave de assinatura
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/fuel-sentinel-v2.jks
+            {
+              echo "storeFile=fuel-sentinel-v2.jks"
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyPassword=$KEYSTORE_PASSWORD"
+              echo "keyAlias=fuelsentinel"
+            } > android/key.properties
+            echo "Assinando com a chave fixa."
+          else
+            echo "::warning::Secrets da chave não cadastrados: o APK sai com a chave de depuração e não atualiza o instalado."
+          fi
       - name: Gerar APK release
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number=$((GITHUB_RUN_NUMBER + 10))
       - name: Disponibilizar o APK para download
         uses: actions/upload-artifact@v4
         with:

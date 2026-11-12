@@ -56,10 +56,9 @@ compartilhada.
 3. Pareie o adaptador OBD-II nas configurações de Bluetooth do celular (a senha costuma ser `1234` ou `0000`).
 4. Abra o app e aceite as permissões de Bluetooth e localização.
 
-> O link sempre aponta para a versão mais recente da branch `test`. Se o Android disser
-> **"App não instalado"** ao atualizar, desinstale a versão antiga primeiro (cada build é assinado
-> com uma chave diferente). Antes, compartilhe os CSVs que quiser guardar, porque a desinstalação
-> apaga os dados do app.
+> O link sempre aponta para a versão mais recente da branch `test`. Para atualizar, basta baixar
+> de novo e tocar em **Atualizar**: os APKs são assinados sempre com a mesma chave, e as coletas
+> e configurações continuam no celular.
 
 ---
 
@@ -263,5 +262,6 @@ test/
   antes é medido com o carro ligado.
 - **Protocolo automático**: a primeira consulta pode levar alguns segundos enquanto o adaptador
   descobre o protocolo do veículo.
-- **Assinatura do APK**: cada build usa uma chave diferente, e atualizar exige desinstalar a versão anterior.
+- **Chave de assinatura**: fica nos Secrets do GitHub (`KEYSTORE_BASE64` e `KEYSTORE_PASSWORD`). Se ela
+  se perder, as próximas versões não atualizam as instaladas e é preciso desinstalar uma vez.
 - O pacote ainda se chama `com.example.obdapp`, e o repositório não tem arquivo de licença.

@@ -42,3 +42,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# chave de assinatura (fica nos Secrets do GitHub)
+android/key.properties
+*.jks
+*.keystore

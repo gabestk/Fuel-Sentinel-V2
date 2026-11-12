@@ -1,4 +1,4 @@
-# Fuel Sentinel
+# Fuel Sentinel V2
 
 <p align="center">
   <img src="assets/icon/fuel_sentinel_icon.png" width="160" alt="Ícone do Fuel Sentinel">
@@ -6,17 +6,20 @@
 
 <p align="center">
   <b>Conferência de abastecimento e coleta de dados OBD-II pelo celular</b><br>
-  <a href="https://github.com/gabestk/fuel_sentinel/releases/download/teste/fuel-sentinel.apk">📲 Baixar o APK</a> ·
+  <a href="https://github.com/gabestk/Fuel-Sentinel-V2/releases/download/teste/fuel-sentinel.apk">📲 Baixar o APK</a> ·
   <a href="#funcionalidades">Funcionalidades</a> ·
   <a href="#para-desenvolvedores">Para desenvolvedores</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/gabestk/fuel_sentinel/actions/workflows/testes.yml"><img src="https://github.com/gabestk/fuel_sentinel/actions/workflows/testes.yml/badge.svg?branch=main" alt="Build"></a>
+  <a href="https://github.com/gabestk/Fuel-Sentinel-V2/actions/workflows/testes.yml"><img src="https://github.com/gabestk/Fuel-Sentinel-V2/actions/workflows/testes.yml/badge.svg?branch=main" alt="Build"></a>
   <img src="https://img.shields.io/badge/versão-1.1.0-26B07F" alt="Versão 1.1.0">
   <img src="https://img.shields.io/badge/Flutter-3.47-02569B?logo=flutter" alt="Flutter">
   <img src="https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white" alt="Android">
 </p>
+
+> Continuação do [Fuel Sentinel](https://github.com/gabestk/fuel_sentinel), que segue na versão 1.0.
+> O desenvolvimento a partir da versão 1.1 acontece aqui.
 
 O Fuel Sentinel se conecta a um adaptador **OBD-II** (a porta de diagnóstico do carro) com chip
 **ELM327** pelo Bluetooth e faz duas coisas:
@@ -48,7 +51,7 @@ compartilhada.
 
 ## Instalar
 
-1. No celular Android, baixe o APK: **[fuel-sentinel.apk](https://github.com/gabestk/fuel_sentinel/releases/download/teste/fuel-sentinel.apk)**
+1. No celular Android, baixe o APK: **[fuel-sentinel.apk](https://github.com/gabestk/Fuel-Sentinel-V2/releases/download/teste/fuel-sentinel.apk)**
 2. Abra o arquivo e permita a instalação de fontes desconhecidas, se o Android pedir.
 3. Pareie o adaptador OBD-II nas configurações de Bluetooth do celular (a senha costuma ser `1234` ou `0000`).
 4. Abra o app e aceite as permissões de Bluetooth e localização.
@@ -185,7 +188,7 @@ e os acumulados da viagem começam no início de cada coleta.
 | Versão | Onde está | Principais mudanças |
 |---|---|---|
 | **1.1.0** | branches `main` e `test` | Scanner com CSV no formato OBDLink, PIDs calculados, mapa e voltas · Abastecimento em 3 etapas com nível estabilizado e PIDs fixos · comunicação ELM327 por pergunta e resposta · coletas salvas com visualizador e compartilhamento · modo escuro · nova Configuração · leitura do VIN corrigida · ícone do app · envio para a AWS desativado |
-| **1.0.0** | branch [`versao-1.0`](https://github.com/gabestk/fuel_sentinel/tree/versao-1.0) e tag `V1.0.0` | versão original, com escolha livre de PIDs no abastecimento e envio para a nuvem |
+| **1.0.0** | repositório original [`gabestk/fuel_sentinel`](https://github.com/gabestk/fuel_sentinel) | versão original, com escolha livre de PIDs no abastecimento e envio para a nuvem |
 
 ---
 
@@ -200,8 +203,8 @@ e os acumulados da viagem começam no início de cada coleta.
 ### Rodar
 
 ```bash
-git clone https://github.com/gabestk/fuel_sentinel.git
-cd fuel_sentinel
+git clone https://github.com/gabestk/Fuel-Sentinel-V2.git
+cd Fuel-Sentinel-V2
 flutter pub get
 flutter run
 ```
@@ -218,7 +221,7 @@ A cada push, o GitHub Actions ([`testes.yml`](.github/workflows/testes.yml)) rod
 
 1. `flutter analyze` e `flutter test`
 2. APK de teste (`fuel-sentinel-debug-apk`) e APK de uso (`fuel-sentinel-apk`) como artefatos
-3. na branch `test`, publica o APK de uso na release [`teste`](https://github.com/gabestk/fuel_sentinel/releases/tag/teste), o link de download fixo
+3. na branch `test`, publica o APK de uso na release [`teste`](https://github.com/gabestk/Fuel-Sentinel-V2/releases/tag/teste), o link de download fixo
 
 ### Estrutura
 

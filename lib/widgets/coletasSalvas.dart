@@ -47,14 +47,17 @@ class ItemColeta extends StatelessWidget {
     }
   }
 
+  bool get _json => arquivo.path.toLowerCase().endsWith('.json');
+
   @override
   Widget build(BuildContext context) {
+    // os JSONs da telemetria não têm visualizador no app: abrem em outro app
     return ListTile(
       dense: true,
-      leading: const Icon(Icons.table_chart_outlined, color: Color(0xFF008355)),
+      leading: Icon(_json ? Icons.data_object : Icons.table_chart_outlined, color: const Color(0xFF008355)),
       title: Text(arquivo.uri.pathSegments.last),
       subtitle: Text('${_data(arquivo)}  ·  ${_tamanho(arquivo)}'),
-      onTap: () => abrirCsv(context, arquivo),
+      onTap: () => _json ? abrirEmOutroApp(context, arquivo) : abrirCsv(context, arquivo),
       trailing: PopupMenuButton<String>(
         onSelected: (op) {
           if (op == 'ver') abrirCsv(context, arquivo);
@@ -63,7 +66,7 @@ class ItemColeta extends StatelessWidget {
           if (op == 'apagar') _apagar(context);
         },
         itemBuilder: (_) => [
-          const PopupMenuItem(value: 'ver', child: Text('Abrir no app')),
+          if (!_json) const PopupMenuItem(value: 'ver', child: Text('Abrir no app')),
           const PopupMenuItem(value: 'outro', child: Text('Abrir em outro aplicativo')),
           const PopupMenuItem(value: 'compartilhar', child: Text('Compartilhar')),
           PopupMenuItem(value: 'apagar', enabled: !bloqueado, child: const Text('Apagar')),
@@ -143,7 +146,10 @@ class _ColetasPageState extends State<ColetasPage> {
 Future<void> compartilharCsv(BuildContext context, File arquivo) async {
   try {
     await Share.shareXFiles(
-      [XFile(arquivo.path, mimeType: 'text/csv')],
+      [
+        XFile(arquivo.path,
+            mimeType: arquivo.path.toLowerCase().endsWith('.json') ? 'application/json' : 'text/csv')
+      ],
       subject: arquivo.uri.pathSegments.last,
     );
   } catch (e) {

@@ -7,8 +7,14 @@
 //    (os PIDs lentos, como temperaturas e nível, são lidos um por volta);
 //  - a gravação acontece numa taxa fixa (1 Hz por padrão, como o OBDLink),
 //    sempre com o último valor de cada PID, o GPS e os sensores do celular.
+//
+// Telemetria do gêmeo digital (especificação do projeto, Fases 0 e 1): além do
+// CSV, a coleta pode gravar um arquivo JSON com pacotes de GPS, IMU e OBD numa
+// taxa alta (50 Hz por padrão), cada leitura com o seu horário, e enviar os
+// mesmos pacotes por WebSocket para o backend (ver functions/telemetria.dart).
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -27,6 +33,7 @@ import '../functions/obd_calculados.dart';
 import '../functions/obd_pids.dart';
 import '../functions/pastas.dart';
 import '../functions/preferencias.dart';
+import '../functions/telemetria.dart';
 import 'coletasSalvas.dart';
 import 'csvViewer.dart';
 import 'MapGps.dart';
@@ -40,6 +47,7 @@ const _chaveCalc = 'scanner_calculados_selecionados';
 const _chaveTaxa = 'scanner_taxa_hz';
 const _prefixoParam = 'scanner_param_';
 const _taxas = [1, 2, 5, 10];
+const _taxasTelemetria = [10, 25, 50, 100];
 
 class PidScanner extends StatefulWidget {
   const PidScanner({super.key});
@@ -96,6 +104,17 @@ class _PidScannerState extends State<PidScanner> {
   final List<StreamSubscription<dynamic>> _assinaturas = [];
   Position? _posicao;
   List<double>? _acel, _acelGrav, _giro;
+
+  // telemetria do gêmeo digital (JSON e WebSocket)
+  bool _gravarJson = true;
+  bool _enviarWs = false;
+  String _servidorWs = servidorWsPadrao;
+  String _vehicleId = '';
+  int _taxaTelemetria = 50;
+  MontadorTelemetria? _telemetria;
+  JsonTelemetriaLogger? _jsonLogger;
+  ClienteTelemetriaWs? _ws;
+  Timer? _timerTelemetria;
   List<File> _coletas = [];
 
   bool get _ocupado =>
@@ -113,10 +132,13 @@ class _PidScannerState extends State<PidScanner> {
   void dispose() {
     _parar = true;
     _gravacao?.cancel();
+    _timerTelemetria?.cancel();
     for (final a in _assinaturas) {
       a.cancel();
     }
     _logger?.fechar();
+    _jsonLogger?.fechar();
+    _ws?.parar();
     _elm.desconectar();
     _filtro.dispose();
     super.dispose();
@@ -145,6 +167,11 @@ class _PidScannerState extends State<PidScanner> {
     final gps = prefs.getBool(chaveScannerGps) ?? true;
     final sensores = prefs.getBool(chaveScannerSensores) ?? true;
     final rapida = prefs.getBool(chaveScannerRapida) ?? true;
+    final gravarJson = prefs.getBool(chaveScannerJson) ?? true;
+    final enviarWs = prefs.getBool(chaveScannerWs) ?? false;
+    final servidor = prefs.getString(chaveScannerServidorWs) ?? servidorWsPadrao;
+    final vehicleId = prefs.getString(chaveScannerVehicleId) ?? '';
+    final taxaTel = prefs.getInt(chaveScannerTaxaTelemetria) ?? 50;
     final m = <String, double>{};
     for (final k in _param.paraMapa().keys) {
       final v = prefs.getDouble('$_prefixoParam$k');
@@ -158,6 +185,11 @@ class _PidScannerState extends State<PidScanner> {
       _usarGps = gps;
       _usarSensores = sensores;
       _primeiraResposta = rapida;
+      _gravarJson = gravarJson;
+      _enviarWs = enviarWs;
+      _servidorWs = servidor;
+      _vehicleId = vehicleId;
+      _taxaTelemetria = _taxasTelemetria.contains(taxaTel) ? taxaTel : 50;
       _param.carregar(m);
     });
   }
@@ -174,6 +206,11 @@ class _PidScannerState extends State<PidScanner> {
     await prefs.setBool(chaveScannerGps, _usarGps);
     await prefs.setBool(chaveScannerSensores, _usarSensores);
     await prefs.setBool(chaveScannerRapida, _primeiraResposta);
+    await prefs.setBool(chaveScannerJson, _gravarJson);
+    await prefs.setBool(chaveScannerWs, _enviarWs);
+    await prefs.setString(chaveScannerServidorWs, _servidorWs);
+    await prefs.setString(chaveScannerVehicleId, _vehicleId);
+    await prefs.setInt(chaveScannerTaxaTelemetria, _taxaTelemetria);
     for (final e in _param.paraMapa().entries) {
       await prefs.setDouble('$_prefixoParam${e.key}', e.value);
     }
@@ -317,6 +354,16 @@ class _PidScannerState extends State<PidScanner> {
           const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
     ).listen((pos) {
       _posicao = pos;
+      _telemetria?.gps = LeituraGps(
+        timestamp: pos.timestamp.millisecondsSinceEpoch,
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        altitude: pos.altitude,
+        speed: pos.speed,
+        heading: pos.heading,
+        horizontalAccuracy: pos.accuracy,
+        speedAccuracy: pos.speedAccuracy,
+      );
       final p = LatLng(pos.latitude, pos.longitude);
       // guarda um ponto a cada 2 m para o mapa não ficar pesado
       if (_trajeto.isEmpty || const Distance().as(LengthUnit.Meter, _trajeto.last, p) >= 2) {
@@ -326,17 +373,25 @@ class _PidScannerState extends State<PidScanner> {
     return true;
   }
 
+  /// Acelerômetro e giroscópio. Com a telemetria ligada, são lidos na taxa da
+  /// telemetria (50 Hz por padrão), senão a ~50 Hz. Guarda só o último valor.
   void _iniciarSensores() {
-    const periodo = SensorInterval.gameInterval; // ~50 Hz, guarda só o último valor
+    final periodo = _telemetria != null
+        ? Duration(microseconds: 1000000 ~/ _taxaTelemetria)
+        : SensorInterval.gameInterval;
     _acel = _acelGrav = _giro = null;
     _assinaturas.add(userAccelerometerEventStream(samplingPeriod: periodo)
         .listen((e) => _acel = [e.x, e.y, e.z], onError: (_) {}));
-    _assinaturas.add(accelerometerEventStream(samplingPeriod: periodo)
-        .listen((e) => _acelGrav = [e.x, e.y, e.z], onError: (_) {}));
+    _assinaturas.add(accelerometerEventStream(samplingPeriod: periodo).listen((e) {
+      _acelGrav = [e.x, e.y, e.z];
+      _telemetria?.acelerometro = LeituraEixos(e.timestamp.millisecondsSinceEpoch, Eixos(e.x, e.y, e.z));
+    }, onError: (_) {}));
     const radParaGrau = 180 / math.pi;
-    _assinaturas.add(gyroscopeEventStream(samplingPeriod: periodo).listen(
-        (e) => _giro = [e.x * radParaGrau, e.y * radParaGrau, e.z * radParaGrau],
-        onError: (_) {}));
+    _assinaturas.add(gyroscopeEventStream(samplingPeriod: periodo).listen((e) {
+      _giro = [e.x * radParaGrau, e.y * radParaGrau, e.z * radParaGrau];
+      // na telemetria o giroscópio vai em rad/s, como o sensor informa
+      _telemetria?.giroscopio = LeituraEixos(e.timestamp.millisecondsSinceEpoch, Eixos(e.x, e.y, e.z));
+    }, onError: (_) {}));
   }
 
   Future<void> _pararSensores() async {
@@ -367,8 +422,27 @@ class _PidScannerState extends State<PidScanner> {
     for (final c in calcs) {
       lidos.addAll(c.pidsNecessarios(_suportados)!);
     }
+    // a telemetria do gêmeo digital usa velocidade, rotação, borboleta, carga,
+    // temperatura e pedal (seção 3.1), mesmo que não estejam marcados no CSV
+    final telemetriaAtiva = _gravarJson || _enviarWs;
+    if (telemetriaAtiva) {
+      lidos.addAll(pidsTelemetria.map((p) => p.pid).where(_suportados.contains));
+      if (!_suportados.contains(0x0D)) {
+        _aviso('O veículo não informa a velocidade (01 0D): a telemetria irá sem ela');
+      }
+    }
     final defsCsv = pidsCsv.map(definicaoDoPid).toList();
     final defsLidos = (lidos.toList()..sort()).map(definicaoDoPid).toList();
+    final carimbo = carimboArquivo(DateTime.now()).replaceAll('-', '');
+    final sessao = novoSessionId(DateTime.now());
+    _telemetria = telemetriaAtiva
+        ? MontadorTelemetria(
+            sessionId: sessao,
+            vehicleId: _vehicleId.trim().isNotEmpty
+                ? _vehicleId.trim()
+                : (_vin.isNotEmpty ? _vin : 'vehicle_001'),
+          )
+        : null;
 
     final comGps = _usarGps && await _iniciarGps();
     final comSensores = _usarSensores;
@@ -389,12 +463,24 @@ class _PidScannerState extends State<PidScanner> {
       'Elapsed time (sec)',
     ];
     try {
-      _logger = await CsvLogger.criar(await pastaColetas(),
-          'CSVLog_${carimboArquivo(DateTime.now()).replaceAll('-', '')}.csv', cabecalho);
+      _logger = await CsvLogger.criar(await pastaColetas(), 'CSVLog_$carimbo.csv', cabecalho);
+      if (_telemetria != null && _gravarJson) {
+        _jsonLogger = await JsonTelemetriaLogger.criar(await pastaColetas(), 'Telemetria_$carimbo.json');
+      }
     } catch (e) {
       await _pararSensores();
+      await _logger?.fechar();
+      _logger = null;
+      _telemetria = null;
       _aviso('Não foi possível criar o arquivo: $e');
       return;
+    }
+    if (_telemetria != null && _enviarWs) {
+      _ws = ClienteTelemetriaWs(ClienteTelemetriaWs.endpoint(_servidorWs, sessao),
+          aoMudar: () {
+        if (mounted) setState(() {});
+      })
+        ..iniciar();
     }
 
     _ultimos.clear();
@@ -428,6 +514,21 @@ class _PidScannerState extends State<PidScanner> {
     _laco = _lacoDeLeitura(defsLidos);
     _gravacao = Timer.periodic(Duration(milliseconds: 1000 ~/ _taxaHz),
         (_) => _gravarLinha(defsCsv, calcs, comGps, comSensores));
+    if (_telemetria != null) {
+      _timerTelemetria = Timer.periodic(
+          Duration(microseconds: 1000000 ~/ _taxaTelemetria), (_) => _emitirTelemetria());
+    }
+  }
+
+  /// Monta um pacote com as últimas leituras e grava no JSON e/ou envia por
+  /// WebSocket.
+  void _emitirTelemetria() {
+    final m = _telemetria;
+    if (m == null) return;
+    final pacote = m.pacote();
+    final texto = json.encode(pacote);
+    _jsonLogger?.gravar(texto);
+    _ws?.enviar(texto, pacote['sequence'] as int);
   }
 
   /// Lê os PIDs sem parar. Os rápidos são lidos em toda volta, os lentos um por
@@ -454,7 +555,11 @@ class _PidScannerState extends State<PidScanner> {
         }
         final t = _cronometro.elapsedMicroseconds / 1e6;
         _leituras++;
-        if (!leitura.vazio) _ultimos[def.pid] = leitura;
+        if (!leitura.vazio) {
+          _ultimos[def.pid] = leitura;
+          final v = leitura.valor;
+          if (v != null) _telemetria?.registrarObd(def.pid, v, DateTime.now().millisecondsSinceEpoch);
+        }
         _calc?.registrar(def.pid, leitura.valor, t);
       }
     }
@@ -537,8 +642,16 @@ class _PidScannerState extends State<PidScanner> {
   Future<void> _finalizarColeta() async {
     _gravacao?.cancel();
     _gravacao = null;
+    _timerTelemetria?.cancel();
+    _timerTelemetria = null;
     _cronometro.stop();
     await _pararSensores();
+    final pacotes = _telemetria?.sequencia ?? 0;
+    _telemetria = null;
+    await _jsonLogger?.fechar();
+    _jsonLogger = null;
+    await _ws?.parar();
+    _ws = null;
     final logger = _logger;
     _logger = null;
     if (logger != null) {
@@ -548,7 +661,8 @@ class _PidScannerState extends State<PidScanner> {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
-            content: Text('Coleta salva: ${logger.linhas} linhas'),
+            content: Text('Coleta salva: ${logger.linhas} linhas'
+                '${pacotes > 0 ? ' e $pacotes pacotes de telemetria' : ''}'),
             action: SnackBarAction(label: 'Abrir', onPressed: () => abrirCsv(context, arquivo)),
           ));
       }
@@ -580,6 +694,9 @@ class _PidScannerState extends State<PidScanner> {
       e.value.$2.text = numeroCsv(atuais[e.key]!);
     }
     var taxa = _taxaHz;
+    var taxaTel = _taxaTelemetria;
+    final servidor = TextEditingController(text: _servidorWs);
+    final vehicleId = TextEditingController(text: _vehicleId);
     final salvar = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -602,6 +719,45 @@ class _PidScannerState extends State<PidScanner> {
                     ),
                   ],
                 ),
+                const Divider(),
+                const Text('Telemetria do gêmeo digital (JSON e WebSocket)',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Taxa da telemetria')),
+                    DropdownButton<int>(
+                      value: taxaTel,
+                      items: [
+                        for (final t in _taxasTelemetria)
+                          DropdownMenuItem(value: t, child: Text('$t Hz')),
+                      ],
+                      onChanged: (v) => setD(() => taxaTel = v ?? 50),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: servidor,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Servidor WebSocket',
+                    hintText: servidorWsPadrao,
+                    helperText: 'O app envia para <servidor>/ws/vehicle/<sessão>',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: vehicleId,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Identificação do veículo (vehicle_id)',
+                    helperText: 'Vazio: usa o VIN lido do carro, ou vehicle_001',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const Divider(),
                 const Text(
                   'Os valores abaixo são usados nos PIDs calculados. Os padrões '
                   'reproduzem o OBDLink (gasolina, AFR 14,7).',
@@ -628,7 +784,12 @@ class _PidScannerState extends State<PidScanner> {
                 for (final e in campos.entries) {
                   e.value.$2.text = numeroCsv(padrao[e.key]!);
                 }
-                setD(() => taxa = 1);
+                servidor.text = servidorWsPadrao;
+                vehicleId.text = '';
+                setD(() {
+                  taxa = 1;
+                  taxaTel = 50;
+                });
               },
               child: const Text('Padrões'),
             ),
@@ -647,9 +808,14 @@ class _PidScannerState extends State<PidScanner> {
       setState(() {
         _param.carregar(m);
         _taxaHz = taxa;
+        _taxaTelemetria = taxaTel;
+        _servidorWs = servidor.text.trim().isEmpty ? servidorWsPadrao : servidor.text.trim();
+        _vehicleId = vehicleId.text.trim();
       });
       await _salvarOpcoes();
     }
+    servidor.dispose();
+    vehicleId.dispose();
     for (final e in campos.values) {
       e.$2.dispose();
     }
@@ -779,6 +945,31 @@ class _PidScannerState extends State<PidScanner> {
               ? null
               : (v) {
                   setState(() => _usarSensores = v);
+                  _salvarOpcoes();
+                },
+        ),
+        SwitchListTile(
+          dense: true,
+          title: const Text('Gravar telemetria em JSON'),
+          subtitle: Text('Pacotes de GPS, IMU e OBD a $_taxaTelemetria Hz para o gêmeo digital, '
+              'além do CSV'),
+          value: _gravarJson,
+          onChanged: _emColeta
+              ? null
+              : (v) {
+                  setState(() => _gravarJson = v);
+                  _salvarOpcoes();
+                },
+        ),
+        SwitchListTile(
+          dense: true,
+          title: const Text('Enviar telemetria por WebSocket'),
+          subtitle: Text('Para $_servidorWs (mude em Configurações da coleta)'),
+          value: _enviarWs,
+          onChanged: _emColeta
+              ? null
+              : (v) {
+                  setState(() => _enviarWs = v);
                   _salvarOpcoes();
                 },
         ),
@@ -954,12 +1145,73 @@ class _PidScannerState extends State<PidScanner> {
     );
   }
 
+  /// Situação da telemetria durante a coleta: pacotes, JSON e WebSocket.
+  Widget _cartaoTelemetria(TextStyle cinza) {
+    final m = _telemetria;
+    if (m == null) return const SizedBox.shrink();
+    final ws = _ws;
+    String estadoWs(EstadoWs e) => switch (e) {
+          EstadoWs.conectado => 'conectado',
+          EstadoWs.conectando => 'conectando...',
+          EstadoWs.aguardando => 'sem conexão, tentando de novo',
+          EstadoWs.desligado => 'desligado',
+        };
+    final corWs = ws == null
+        ? Colors.grey
+        : ws.estado == EstadoWs.conectado
+            ? _verde
+            : Colors.orange;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Telemetria do gêmeo digital', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text('${m.sessionId}  ·  ${m.vehicleId}', style: cinza),
+            Text('${m.sequencia} pacotes a $_taxaTelemetria Hz  ·  '
+                'GPS ${m.gps == null ? 'sem sinal' : 'ok'}  ·  '
+                'IMU ${m.acelerometro == null ? 'sem leitura' : 'ok'}  ·  '
+                'OBD ${m.obd.isEmpty ? 'sem leitura' : 'ok'}', style: cinza),
+            if (_jsonLogger != null)
+              Row(children: [
+                const Icon(Icons.data_object, size: 16, color: _verde),
+                const SizedBox(width: 6),
+                Expanded(child: Text(_jsonLogger!.arquivo.uri.pathSegments.last, style: cinza)),
+              ]),
+            if (ws != null) ...[
+              const SizedBox(height: 4),
+              Row(children: [
+                Icon(Icons.wifi_tethering, size: 16, color: corWs),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('WebSocket ${estadoWs(ws.estado)}',
+                      style: TextStyle(color: corWs, fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              Text('${ws.enviados} enviados  ·  ${ws.naFila} na fila'
+                  '${ws.descartados > 0 ? '  ·  ${ws.descartados} descartados' : ''}'
+                  '${ws.reconexoes > 0 ? '  ·  ${ws.reconexoes} reconexões' : ''}'
+                  '${ws.latenciaMs != null ? '  ·  latência ${ws.latenciaMs} ms' : ''}', style: cinza),
+              if (ws.falhas.isNotEmpty)
+                Text(ws.falhas.last, style: const TextStyle(fontSize: 11, color: Colors.orange),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _telaColeta() {
     final tVolta = _cronometro.elapsedMicroseconds / 1e6 - _tInicioVolta;
     final cinza = TextStyle(fontSize: 12, color: Theme.of(context).hintColor);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _cartaoTelemetria(cinza),
         if (_gpsNaColeta)
           Card(
             margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),

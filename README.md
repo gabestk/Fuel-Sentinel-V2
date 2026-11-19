@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://github.com/gabestk/Fuel-Sentinel-V2/actions/workflows/testes.yml"><img src="https://github.com/gabestk/Fuel-Sentinel-V2/actions/workflows/testes.yml/badge.svg?branch=main" alt="Build"></a>
-  <img src="https://img.shields.io/badge/versão-1.1.0-26B07F" alt="Versão 1.1.0">
+  <img src="https://img.shields.io/badge/versão-1.2.0-26B07F" alt="Versão 1.2.0">
   <img src="https://img.shields.io/badge/Flutter-3.47-02569B?logo=flutter" alt="Flutter">
   <img src="https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white" alt="Android">
 </p>
@@ -40,6 +40,7 @@ compartilhada.
 - [Funcionalidades](#funcionalidades)
   - [Abastecimento](#abastecimento)
   - [Scanner](#scanner)
+  - [Telemetria do gêmeo digital](#telemetria-do-gêmeo-digital)
   - [Coletas salvas](#coletas-salvas)
   - [Configuração](#configuração)
 - [Arquivos gerados](#arquivos-gerados)
@@ -134,9 +135,91 @@ ser alterados nos ajustes do Scanner.
 
 </details>
 
+### Telemetria do gêmeo digital
+
+Ligada no Scanner, a telemetria prepara os dados para o gêmeo digital no BeamNG.tech, conforme a
+especificação do projeto (Fase 0, coleta, e Fase 1, comunicação com o backend). Enquanto o CSV
+continua a 1 Hz, a telemetria monta **pacotes JSON a 50 Hz** (10, 25, 50 ou 100 Hz), cada um com a
+última leitura de cada fonte e o horário em que ela foi adquirida:
+
+```json
+{
+  "session_id": "session_20261119_113700",
+  "vehicle_id": "9BHBG51CAJP000000",
+  "sequence": 1250,
+  "gps": {"timestamp": 1794950000125, "latitude": -22.58912, "longitude": -43.28431,
+          "altitude": 24.0, "speed": 15.2, "heading": 120.5,
+          "horizontal_accuracy": 3.0, "speed_accuracy": 0.5},
+  "imu": {"timestamp": 1794950000120,
+          "accelerometer": {"x": 0.45, "y": 1.20, "z": 9.81},
+          "gyroscope": {"x": 0.01, "y": 0.02, "z": 0.18}},
+  "obd": {"timestamp": 1794950000115, "speed": 15.0, "rpm": 3200, "throttle_position": 35,
+          "engine_load": 22.4, "coolant_temperature": 88, "accelerator_pedal_position": 24.3}
+}
+```
+
+| Campo | Unidade e origem |
+|---|---|
+| `timestamp` | milissegundos desde 01/01/1970 (UTC), um por fonte |
+| `gps.speed`, `obd.speed` | m/s (o OBD informa km/h e o app converte) |
+| `gps.heading` | graus, 0 = norte, sentido horário |
+| `imu.accelerometer` | m/s², com a gravidade e nos eixos do celular |
+| `imu.gyroscope` | rad/s, nos eixos do celular |
+| `obd` | velocidade (`01 0D`), rotação (`0C`), borboleta (`11`), carga (`04`), temperatura (`05`) e pedal D (`49`), os que o veículo suportar |
+| bloco `null` | ainda sem leitura daquela fonte (ex.: GPS sem sinal) |
+
+Os PIDs da telemetria são lidos mesmo sem estarem marcados na lista. A compensação da gravidade e a
+mudança dos eixos do celular para os do veículo ficam para o backend (seção 5.2 da especificação).
+
+**Arquivo JSON**: `Telemetria_AAAAMMDD_hhmmss.json`, uma lista JSON com um pacote por linha, salva
+junto do CSV da mesma coleta.
+
+**WebSocket**: com *Enviar telemetria por WebSocket* ligado, os pacotes vão para
+`ws://<servidor>/ws/vehicle/<session_id>` (o servidor é definido nas configurações da coleta, como
+`ws://192.168.0.10:8000`, e aceita `wss://`). O cliente:
+
+- reconecta sozinho, esperando 1, 2, 4, 8 e depois 10 s entre as tentativas
+- guarda os pacotes numa fila enquanto não há conexão (até 6000, cerca de 2 min a 50 Hz) e os envia
+  em ordem quando ela volta. Acima disso descarta os mais antigos e conta quantos
+- numera os pacotes (`sequence`), para o backend identificar perdas
+- mede a latência se o servidor responder `{"type": "ack", "sequence": n}`
+- mostra na tela da coleta o estado da conexão, enviados, fila, descartados, reconexões, latência e a última falha
+
+<details>
+<summary><b>Servidor de teste em Python (FastAPI)</b></summary>
+
+Enquanto o backend do projeto não existe, este servidor mínimo recebe os pacotes, responde o `ack`
+e mostra o que chegou. Rode no PC na mesma rede do celular e use o IP do PC no app.
+
+```python
+# pip install fastapi uvicorn
+# uvicorn servidor_teste:app --host 0.0.0.0 --port 8000
+import json
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+app = FastAPI()
+
+@app.websocket("/ws/vehicle/{session_id}")
+async def veiculo(ws: WebSocket, session_id: str):
+    await ws.accept()
+    print("conectou:", session_id)
+    try:
+        while True:
+            p = json.loads(await ws.receive_text())
+            await ws.send_text(json.dumps({"type": "ack", "sequence": p["sequence"]}))
+            if p["sequence"] % 50 == 0:
+                obd, gps = p.get("obd") or {}, p.get("gps") or {}
+                print(p["sequence"], "v_obd =", obd.get("speed"), "m/s",
+                      "lat =", gps.get("latitude"), "lon =", gps.get("longitude"))
+    except WebSocketDisconnect:
+        print("desconectou:", session_id)
+```
+
+</details>
+
 ### Coletas salvas
 
-Disponível no Abastecimento e no Scanner. Para cada arquivo:
+Disponível no Abastecimento e no Scanner. Para cada arquivo (os JSONs da telemetria abrem em outro aplicativo):
 
 - **Abrir no app**: mapa com o trajeto (início, fim e voltas), gráfico e tabela
 - **Abrir em outro aplicativo**
@@ -165,6 +248,7 @@ Ficam em `Android/data/com.example.obdapp/files/coletas_obd/`, acessível pelo c
 | Arquivo | Origem | Conteúdo |
 |---|---|---|
 | `CSVLog_AAAAMMDD_hhmmss.csv` | Scanner | PIDs, calculados, GPS, sensores e `Lap` |
+| `Telemetria_AAAAMMDD_hhmmss.json` | Scanner | pacotes da telemetria do gêmeo digital ([formato](#telemetria-do-gêmeo-digital)) |
 | `Abastecimento_AAAAMMDD_hhmmss.csv` | Abastecimento | nível, VIN, GPS e coluna `Evento` (nível antes, fim do abastecimento, nível depois, salvo) |
 | `AAAA-MM-DD_hh-mm-ss.json` (na pasta `files/`, um nível acima) | Abastecimento | quantidade, níveis antes e depois com horário e se estabilizaram, litros estimados, diferença, foto da bomba (hash) e local |
 
@@ -186,7 +270,8 @@ e os acumulados da viagem começam no início de cada coleta.
 
 | Versão | Onde está | Principais mudanças |
 |---|---|---|
-| **1.1.0** | branches `main` e `test` | Scanner com CSV no formato OBDLink, PIDs calculados, mapa e voltas · Abastecimento em 3 etapas com nível estabilizado e PIDs fixos · comunicação ELM327 por pergunta e resposta · coletas salvas com visualizador e compartilhamento · modo escuro · nova Configuração · leitura do VIN corrigida · ícone do app · envio para a AWS desativado |
+| **1.2.0** | branch `test` | Telemetria do gêmeo digital no Scanner: pacotes JSON de GPS, IMU e OBD a até 100 Hz, gravados em arquivo e enviados por WebSocket com reconexão, fila e sequência |
+| **1.1.0** | branch `main` | Scanner com CSV no formato OBDLink, PIDs calculados, mapa e voltas · Abastecimento em 3 etapas com nível estabilizado e PIDs fixos · comunicação ELM327 por pergunta e resposta · coletas salvas com visualizador e compartilhamento · modo escuro · nova Configuração · leitura do VIN corrigida · ícone do app · envio para a AWS desativado |
 | **1.0.0** | repositório original [`gabestk/fuel_sentinel`](https://github.com/gabestk/fuel_sentinel) | versão original, com escolha livre de PIDs no abastecimento e envio para a nuvem |
 
 ---
@@ -232,6 +317,7 @@ lib/
 │   ├── obd_pids.dart         tabela de PIDs, interpretação das respostas e decodificação do VIN
 │   ├── obd_calculados.dart   PIDs calculados
 │   ├── nivel_estavel.dart    detecção de nível estável (mediana, dispersão e tendência)
+│   ├── telemetria.dart       pacotes do gêmeo digital, arquivo JSON e cliente WebSocket
 │   ├── csv_logger.dart       gravação do CSV linha a linha
 │   ├── csv_leitor.dart       leitura do CSV para o visualizador
 │   └── pastas.dart           pasta das coletas
@@ -248,7 +334,8 @@ lib/
 └── dataBaseClass/            modelos do Hive
 test/
 ├── obd_pids_test.dart
-└── nivel_estavel_test.dart
+├── nivel_estavel_test.dart
+└── telemetria_test.dart
 ```
 
 ---

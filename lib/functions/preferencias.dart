@@ -13,6 +13,14 @@ const chaveScannerSensores = 'scanner_usar_sensores';
 const chaveScannerRapida = 'scanner_leitura_rapida';
 const prefixoParamCalculo = 'scanner_param_';
 
+// Scanner: telemetria do gêmeo digital (JSON e WebSocket)
+const chaveScannerJson = 'scanner_telemetria_json';
+const chaveScannerWs = 'scanner_telemetria_ws';
+const chaveScannerServidorWs = 'scanner_telemetria_servidor';
+const chaveScannerVehicleId = 'scanner_telemetria_vehicle_id';
+const chaveScannerTaxaTelemetria = 'scanner_telemetria_hz';
+const servidorWsPadrao = 'ws://192.168.0.10:8000';
+
 ThemeMode temaDeTexto(String? t) => switch (t) {
       'claro' => ThemeMode.light,
       'escuro' => ThemeMode.dark,

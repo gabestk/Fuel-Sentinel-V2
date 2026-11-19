@@ -11,14 +11,17 @@ Future<Directory> pastaColetas() async {
   return Directory('${base.path}/coletas_obd');
 }
 
-/// CSVs salvos, do mais recente para o mais antigo.
+/// CSVs e JSONs de telemetria salvos, do mais recente para o mais antigo.
 Future<List<File>> listarColetas() async {
   final pasta = await pastaColetas();
   if (!await pasta.exists()) return [];
   final arquivos = pasta
       .listSync()
       .whereType<File>()
-      .where((f) => f.path.toLowerCase().endsWith('.csv'))
+      .where((f) {
+        final n = f.path.toLowerCase();
+        return n.endsWith('.csv') || n.endsWith('.json');
+      })
       .toList()
     ..sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
   return arquivos;

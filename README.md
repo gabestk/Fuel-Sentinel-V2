@@ -243,7 +243,7 @@ continua desenhado sobre um fundo liso.
 
 ## Arquivos gerados
 
-Ficam em `Android/data/com.example.obdapp/files/coletas_obd/`, acessível pelo cabo USB no computador.
+Ficam em `Android/data/br.inmetro.fuelsentinel/files/coletas_obd/`, acessível pelo cabo USB no computador.
 
 | Arquivo | Origem | Conteúdo |
 |---|---|---|
@@ -349,6 +349,3 @@ test/
   antes é medido com o carro ligado.
 - **Protocolo automático**: a primeira consulta pode levar alguns segundos enquanto o adaptador
   descobre o protocolo do veículo.
-- **Chave de assinatura**: fica nos Secrets do GitHub (`KEYSTORE_BASE64` e `KEYSTORE_PASSWORD`). Se ela
-  se perder, as próximas versões não atualizam as instaladas e é preciso desinstalar uma vez.
-- O pacote ainda se chama `com.example.obdapp`, e o repositório não tem arquivo de licença.

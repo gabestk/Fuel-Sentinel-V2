@@ -1,4 +1,4 @@
-package com.example.obdapp
+package br.inmetro.fuelsentinel
 
 import io.flutter.embedding.android.FlutterActivity
 

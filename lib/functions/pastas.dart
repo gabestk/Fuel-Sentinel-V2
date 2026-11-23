@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart' as path_prov;
 
 /// Pasta onde ficam os CSVs das coletas (Scanner e Abastecimento):
-/// Android/data/com.example.obdapp/files/coletas_obd
+/// Android/data/br.inmetro.fuelsentinel/files/coletas_obd
 Future<Directory> pastaColetas() async {
   Directory? base;
   if (Platform.isAndroid) base = await path_prov.getExternalStorageDirectory();

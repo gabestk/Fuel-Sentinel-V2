@@ -51,13 +51,12 @@ class ItemColeta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // os JSONs da telemetria não têm visualizador no app: abrem em outro app
     return ListTile(
       dense: true,
       leading: Icon(_json ? Icons.data_object : Icons.table_chart_outlined, color: const Color(0xFF008355)),
       title: Text(arquivo.uri.pathSegments.last),
       subtitle: Text('${_data(arquivo)}  ·  ${_tamanho(arquivo)}'),
-      onTap: () => _json ? abrirEmOutroApp(context, arquivo) : abrirCsv(context, arquivo),
+      onTap: () => abrirCsv(context, arquivo),
       trailing: PopupMenuButton<String>(
         onSelected: (op) {
           if (op == 'ver') abrirCsv(context, arquivo);
@@ -66,7 +65,7 @@ class ItemColeta extends StatelessWidget {
           if (op == 'apagar') _apagar(context);
         },
         itemBuilder: (_) => [
-          if (!_json) const PopupMenuItem(value: 'ver', child: Text('Abrir no app')),
+          const PopupMenuItem(value: 'ver', child: Text('Abrir no app')),
           const PopupMenuItem(value: 'outro', child: Text('Abrir em outro aplicativo')),
           const PopupMenuItem(value: 'compartilhar', child: Text('Compartilhar')),
           PopupMenuItem(value: 'apagar', enabled: !bloqueado, child: const Text('Apagar')),

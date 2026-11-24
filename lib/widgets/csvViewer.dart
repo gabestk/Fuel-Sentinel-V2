@@ -1,5 +1,7 @@
-// Visualização de um CSV dentro do app: resumo, gráfico de uma coluna ao longo
-// do tempo e a tabela completa. Também abre o arquivo em outro aplicativo.
+// Visualização de um CSV ou do JSON da telemetria dentro do app: resumo, mapa,
+// gráfico de uma coluna ao longo do tempo e a tabela completa. Também abre o
+// arquivo em outro aplicativo. O JSON é convertido numa tabela igual à do CSV
+// (functions/json_leitor.dart), um pacote por linha.
 
 import 'dart:io';
 import 'package:flutter/foundation.dart' show compute;
@@ -9,27 +11,35 @@ import 'package:open_filex/open_filex.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 import '../functions/csv_leitor.dart';
+import '../functions/json_leitor.dart';
 import 'MapGps.dart';
 
 const _verde = Color(0xFF008355);
 
-/// Abre o arquivo no aplicativo do celular associado a CSV (Planilhas, Excel...).
+bool _ehJson(String caminho) => caminho.toLowerCase().endsWith('.json');
+
+/// Abre o arquivo no aplicativo do celular associado ao tipo (Planilhas, Excel,
+/// um editor de texto...).
 Future<void> abrirEmOutroApp(BuildContext context, File arquivo) async {
-  final r = await OpenFilex.open(arquivo.path, type: 'text/csv');
+  final json = _ehJson(arquivo.path);
+  final r = await OpenFilex.open(arquivo.path, type: json ? 'application/json' : 'text/csv');
   if (r.type != ResultType.done && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(r.type == ResultType.noAppToOpen
-            ? 'Nenhum aplicativo instalado abre CSV. Instale o Planilhas Google ou o Excel.'
+            ? (json
+                ? 'Nenhum aplicativo instalado abre JSON.'
+                : 'Nenhum aplicativo instalado abre CSV. Instale o Planilhas Google ou o Excel.')
             : 'Não foi possível abrir: ${r.message}')));
   }
 }
 
 (TabelaCsv, List<double>, List<int>) _lerArquivo(String caminho) {
-  final t = lerCsv(File(caminho).readAsStringSync());
+  final texto = File(caminho).readAsStringSync();
+  final t = _ehJson(caminho) ? lerJsonTelemetria(texto) : lerCsv(texto);
   return (t, t.tempos(), t.colunasNumericas());
 }
 
-/// Abre a página de visualização do CSV.
+/// Abre a página de visualização do CSV ou do JSON da telemetria.
 Future<void> abrirCsv(BuildContext context, File arquivo) =>
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => CsvViewer(arquivo: arquivo)));
 
@@ -74,7 +84,9 @@ class _CsvViewerState extends State<CsvViewer> {
         if (voltaAnterior != null && v != voltaAnterior && pts.isNotEmpty) voltas.add(pts.last);
         voltaAnterior = v;
       }
-      if (valido) pts.add(LatLng(la, lo));
+      if (valido && (pts.isEmpty || pts.last.latitude != la || pts.last.longitude != lo)) {
+        pts.add(LatLng(la, lo));
+      }
     }
     _trajeto = pts;
     _voltas = voltas;
@@ -135,7 +147,12 @@ class _CsvViewerState extends State<CsvViewer> {
   bool _ehColunaDeTempo(String c) => c == 'Time' || c == 'Elapsed time (sec)' || c == 'Tempo (s)';
 
   int? _escolherColunaInicial(TabelaCsv t) {
-    for (final preferida in ['Vehicle speed (km/h)', 'Engine RPM (RPM)', 'Fuel level input (%)']) {
+    for (final preferida in [
+      'Vehicle speed (km/h)',
+      'Engine RPM (RPM)',
+      'Fuel level input (%)',
+      'GPS Speed (km/h)',
+    ]) {
       final i = t.colunas.indexOf(preferida);
       if (i >= 0 && _numericas.contains(i)) return i;
     }
@@ -157,7 +174,7 @@ class _CsvViewerState extends State<CsvViewer> {
           spacing: 24,
           runSpacing: 8,
           children: [
-            _info('Linhas', '${t.nLinhas}'),
+            _info(_ehJson(widget.arquivo.path) ? 'Pacotes' : 'Linhas', '${t.nLinhas}'),
             _info('Colunas', '${t.colunas.length}'),
             _info('Duração', _duracao()),
             _info('Tamanho', '${(widget.arquivo.lengthSync() / 1024).toStringAsFixed(1)} kB'),
@@ -183,8 +200,11 @@ class _CsvViewerState extends State<CsvViewer> {
         child: Text('Nenhuma coluna numérica para mostrar no gráfico.'),
       );
     }
+    // arquivos grandes (o JSON chega a 100 pacotes por segundo) são desenhados
+    // com no máximo ~4000 pontos, para o gráfico não travar
+    final passo = (t.nLinhas / 4000).ceil().clamp(1, 1 << 30);
     final pontos = <_Ponto>[
-      for (var i = 0; i < t.nLinhas; i++)
+      for (var i = 0; i < t.nLinhas; i += passo)
         if (t.numero(i, c) != null) _Ponto(_tempos[i], t.numero(i, c)!)
     ];
     return Card(

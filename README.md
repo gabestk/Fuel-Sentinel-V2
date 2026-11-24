@@ -172,7 +172,7 @@ Os PIDs da telemetria são lidos mesmo sem estarem marcados na lista. A compensa
 mudança dos eixos do celular para os do veículo ficam para o backend (seção 5.2 da especificação).
 
 **Arquivo JSON**: `Telemetria_AAAAMMDD_hhmmss.json`, uma lista JSON com um pacote por linha, salva
-junto do CSV da mesma coleta.
+junto do CSV da mesma coleta. Ele abre no próprio app, no mesmo visualizador dos CSVs.
 
 **WebSocket**: com *Enviar telemetria por WebSocket* ligado, os pacotes vão para
 `ws://<servidor>/ws/vehicle/<session_id>` (o servidor é definido nas configurações da coleta, como
@@ -219,9 +219,10 @@ async def veiculo(ws: WebSocket, session_id: str):
 
 ### Coletas salvas
 
-Disponível no Abastecimento e no Scanner. Para cada arquivo (os JSONs da telemetria abrem em outro aplicativo):
+Disponível no Abastecimento e no Scanner. Para cada arquivo, CSV ou JSON da telemetria:
 
 - **Abrir no app**: mapa com o trajeto (início, fim e voltas), gráfico e tabela
+  (no JSON, cada pacote vira uma linha e cada campo de GPS, OBD e IMU uma coluna, com as velocidades em km/h)
 - **Abrir em outro aplicativo**
 - **Compartilhar**: WhatsApp, e-mail, Drive e outros
 - **Apagar**
@@ -320,6 +321,7 @@ lib/
 │   ├── telemetria.dart       pacotes do gêmeo digital, arquivo JSON e cliente WebSocket
 │   ├── csv_logger.dart       gravação do CSV linha a linha
 │   ├── csv_leitor.dart       leitura do CSV para o visualizador
+│   ├── json_leitor.dart      leitura do JSON da telemetria para o visualizador
 │   └── pastas.dart           pasta das coletas
 ├── widgets/
 │   ├── getdata.dart          aba Abastecimento (conexão)

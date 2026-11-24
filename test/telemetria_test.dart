@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:obdapp/functions/json_leitor.dart';
 import 'package:obdapp/functions/telemetria.dart';
 
 void main() {
@@ -106,5 +107,47 @@ void main() {
 
   test('session_id', () {
     expect(novoSessionId(DateTime(2026, 11, 19, 11, 37, 5)), 'session_20261119_113705');
+  });
+
+  group('leitor do JSON', () {
+    String arquivo({bool completo = true}) {
+      final m = MontadorTelemetria(sessionId: 's1', vehicleId: 'v1');
+      final pacotes = <String>[json.encode(m.pacote())]; // sem leitura nenhuma
+      m.gps = const LeituraGps(
+          timestamp: 1000, latitude: -22.5, longitude: -43.2, altitude: 24,
+          speed: 10, heading: 90, horizontalAccuracy: 3, speedAccuracy: 0.5);
+      m.registrarObd(0x0D, 36, 1000);
+      pacotes.add(json.encode(m.pacote()));
+      m.acelerometro = const LeituraEixos(1500, Eixos(0.1, 0.2, 9.8));
+      pacotes.add(json.encode(m.pacote()));
+      final corpo = pacotes.join(',\n');
+      return completo ? '[\n$corpo\n]\n' : '[\n$corpo';
+    }
+
+    test('vira uma tabela com mapa, velocidade e tempo', () {
+      final t = lerJsonTelemetria(arquivo());
+      expect(t.nLinhas, 3);
+      expect(t.colunas.first, 'Tempo (s)');
+      for (final c in ['Latitude (deg)', 'Longitude (deg)', 'Vehicle speed (km/h)', 'GPS Speed (km/h)',
+          'Accel (Grav) Z (m/s²)', 'session_id']) {
+        expect(t.colunas, contains(c));
+      }
+      // sem giroscópio nem rotação na coleta: colunas de fora
+      expect(t.colunas, isNot(contains('Gyro Z (rad/s)')));
+      expect(t.colunas, isNot(contains('Engine RPM (RPM)')));
+      final v = t.colunas.indexOf('Vehicle speed (km/h)');
+      expect(t.numero(1, v), closeTo(36, 1e-9)); // 10 m/s -> 36 km/h
+      expect(t.numero(0, v), isNull);
+      expect(t.tempos(), [0, 0, 0.5]);
+    });
+
+    test('lê o arquivo de uma coleta interrompida (sem o colchete final)', () {
+      final t = lerJsonTelemetria(arquivo(completo: false));
+      expect(t.nLinhas, 3);
+    });
+
+    test('arquivo vazio', () {
+      expect(lerJsonTelemetria('[\n\n]').nLinhas, 0);
+    });
   });
 }

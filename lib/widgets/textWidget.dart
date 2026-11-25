@@ -13,6 +13,7 @@ class Textdata extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final corTexto = Theme.of(context).colorScheme.onSurface;
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
       child: Row(
@@ -21,18 +22,18 @@ class Textdata extends StatelessWidget {
         
           Text(
             tipo,
-            style: const TextStyle(
+            style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 10,
-                color: Colors.black,
+                color: corTexto,
                 decoration: TextDecoration.none),
           ),
           Text(
             texto ?? 'NULL',
-            style: const TextStyle(
+            style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 10,
-                color: Colors.black,
+                color: corTexto,
                 decoration: TextDecoration.none),
           ),
         ],

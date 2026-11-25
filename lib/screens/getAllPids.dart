@@ -520,7 +520,7 @@ class _getallpidsState extends State<getallpids> {
               context.router.popUntilRouteWithName(Pidsdiscovery.name);
             },
             child: Container(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.surface,
               padding: const EdgeInsets.only(top: 0),
               width: double.infinity,
               height: devices.length * 50,

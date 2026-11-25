@@ -122,7 +122,7 @@ class _HistoryUserState extends State<HistoryUserWidget> {
                           decoration: BoxDecoration(
                             border: Border.all(color: Colors.grey),
                             borderRadius: BorderRadius.circular(6),
-                            color: Colors.white,
+                            color: Theme.of(context).cardTheme.color,
                           ),
                           child: Container(
                             child: Column(
@@ -131,8 +131,8 @@ class _HistoryUserState extends State<HistoryUserWidget> {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(Icons.directions_car,
-                                        color: Colors.black, size: 30),
+                                    Icon(Icons.directions_car,
+                                        color: Theme.of(context).colorScheme.onSurface, size: 30),
                                     Text(' ' + help1[i].vehicle.id),
                                   ],
                                 ),
@@ -143,12 +143,12 @@ class _HistoryUserState extends State<HistoryUserWidget> {
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceEvenly,
                                     children: [
-                                      const Icon(Icons.calendar_month,
-                                          color: Colors.black, size: 15),
+                                      Icon(Icons.calendar_month,
+                                          color: Theme.of(context).colorScheme.onSurface, size: 15),
                                       Text(help1[i].vehicle.time.toString()),
                                       const SizedBox(width: 10),
-                                      const Icon(Icons.timer,
-                                          color: Colors.black, size: 15),
+                                      Icon(Icons.timer,
+                                          color: Theme.of(context).colorScheme.onSurface, size: 15),
                                       Text(
                                           '${' ' + help1[i].vehicle.tacc.toStringAsFixed(3)} s'),
                                     ],

@@ -134,9 +134,9 @@ class _ObdDataMapState extends State<HistoryRideUser> {
                     child: Container(
                       padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                       height: heigh1,
-                      decoration: const BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.only(
+                      decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: const BorderRadius.only(
                               topLeft: Radius.circular(10),
                               topRight: Radius.circular(10))),
                       child: SingleChildScrollView(

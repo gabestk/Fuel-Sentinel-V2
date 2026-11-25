@@ -1251,10 +1251,10 @@ count = 0;
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Expanded(child: Text(rotulo, style: const TextStyle(color: Colors.black87))),
+          Expanded(child: Text(rotulo)),
           Text(valor,
               style: TextStyle(
-                  fontWeight: FontWeight.bold, color: destaque ? _verde : Colors.black87)),
+                  fontWeight: FontWeight.bold, color: destaque ? _verde : null)),
         ],
       ),
     );
